@@ -633,9 +633,15 @@ function Library:CreateWindow(options)
             local section = {}
 
             section.Enabled = true
+            section._controls = {}
             function section:SetEnabled(v)
                 section.Enabled = not not v
                 sectionFrame.Visible = section.Enabled
+                for _, ctl in ipairs(section._controls) do
+                    if ctl and ctl.SetEnabled then
+                        ctl:SetEnabled(section.Enabled)
+                    end
+                end
                 tab._updateCanvas()
             end
 
@@ -660,6 +666,8 @@ function Library:CreateWindow(options)
                     options = {}
                 end
                 options = options or {}
+
+                local enabled = true
 
                 local showKeybind = (options.Keybindable == true) or (options.Keybind ~= nil) or (options.Key ~= nil)
 
@@ -804,6 +812,9 @@ function Library:CreateWindow(options)
                 end
 
                 btn.MouseButton1Click:Connect(function()
+                    if not enabled then
+                        return
+                    end
                     if callback then
                         task.spawn(callback)
                     end
@@ -817,8 +828,22 @@ function Library:CreateWindow(options)
                         renderKey()
                     end
                 end
-                return {
+                local ctl = {
                     Instance = btn,
+                    SetEnabled = function(_, v)
+                        enabled = not not v
+                        item.Visible = enabled
+                        if not enabled then
+                            if bindToken then
+                                window:_unbindKey(bindToken)
+                                bindToken = nil
+                            end
+                            waiting = false
+                            safeDisconnect(captureConn)
+                            captureConn = nil
+                        end
+                        tab._updateCanvas()
+                    end,
                     SetText = function(_, v)
                         lbl.Text = tostring(v)
                         tab._updateCanvas()
@@ -840,6 +865,8 @@ function Library:CreateWindow(options)
                         end
                     end
                 }
+                table.insert(section._controls, ctl)
+                return ctl
             end
 
             function section:AddToggle(text, default, callback)
@@ -858,6 +885,8 @@ function Library:CreateWindow(options)
                 local item, st = baseItemFrame(36)
 
                 local state = default and true or false
+
+                local enabled = true
 
                 local btn = Instance.new("TextButton")
                 btn.BackgroundTransparency = 1
@@ -933,6 +962,9 @@ function Library:CreateWindow(options)
                 end)
 
                 btn.MouseButton1Click:Connect(function()
+                    if not enabled then
+                        return
+                    end
                     state = not state
                     render()
                     if callback then
@@ -946,6 +978,10 @@ function Library:CreateWindow(options)
                 local captureConn
                 local bindToken
                 local currentKey = normalizeKey(options.Keybind or options.Key)
+
+                if not showKeybind then
+                    currentKey = nil
+                end
 
                 local function renderKey()
                     if waiting then
@@ -965,6 +1001,9 @@ function Library:CreateWindow(options)
                     end
                     if currentKey then
                         bindToken = window:_bindKey(currentKey, function()
+                            if not enabled then
+                                return
+                            end
                             state = not state
                             render()
                             if callback then
@@ -1007,6 +1046,27 @@ function Library:CreateWindow(options)
                     end)
                 end
 
+                if showKeybind then
+                    keyBtn.MouseEnter:Connect(function()
+                        tween(keyBtn, { BackgroundColor3 = theme.PrimaryHover })
+                        if not waiting then
+                            tween(keyStroke, { Color = theme.StrokeHover })
+                        end
+                    end)
+                    keyBtn.MouseLeave:Connect(function()
+                        tween(keyBtn, { BackgroundColor3 = theme.Primary })
+                        tween(keyStroke, { Color = waiting and theme.NeonStroke or theme.Stroke })
+                    end)
+
+                    keyBtn.MouseButton1Click:Connect(function()
+                        if waiting then
+                            stopCapture()
+                        else
+                            startCapture()
+                        end
+                    end)
+                end
+
                 render()
                 if showKeybind then
                     if currentKey then
@@ -1016,8 +1076,17 @@ function Library:CreateWindow(options)
                     end
                 end
                 tab._updateCanvas()
-                return {
+                local ctl = {
                     Get = function() return state end,
+                    SetEnabled = function(_, v)
+                        enabled = not not v
+                        item.Visible = enabled
+                        if not enabled and bindToken then
+                            window:_unbindKey(bindToken)
+                            bindToken = nil
+                        end
+                        tab._updateCanvas()
+                    end,
                     Set = function(_, v)
                         state = not not v
                         render()
@@ -1125,6 +1194,9 @@ function Library:CreateWindow(options)
                 end)
 
                 btn.MouseButton1Click:Connect(function()
+                    if not enabled then
+                        return
+                    end
                     state = not state
                     render()
                     if callback then
@@ -1138,6 +1210,10 @@ function Library:CreateWindow(options)
                 local captureConn
                 local bindToken
                 local currentKey = normalizeKey(options.Keybind or options.Key)
+
+                if not showKeybind then
+                    currentKey = nil
+                end
 
                 local function renderKey()
                     if waiting then
@@ -1157,6 +1233,9 @@ function Library:CreateWindow(options)
                     end
                     if currentKey then
                         bindToken = window:_bindKey(currentKey, function()
+                            if not enabled then
+                                return
+                            end
                             state = not state
                             render()
                             if callback then
@@ -1229,8 +1308,17 @@ function Library:CreateWindow(options)
                     end
                 end
                 tab._updateCanvas()
-                return {
+                local ctl = {
                     Get = function() return state end,
+                    SetEnabled = function(_, v)
+                        enabled = not not v
+                        item.Visible = enabled
+                        if not enabled and bindToken then
+                            window:_unbindKey(bindToken)
+                            bindToken = nil
+                        end
+                        tab._updateCanvas()
+                    end,
                     Set = function(_, v)
                         state = not not v
                         render()
@@ -1254,6 +1342,8 @@ function Library:CreateWindow(options)
                         end
                     end
                 }
+                table.insert(section._controls, ctl)
+                return ctl
             end
 
             function section:AddKeybind(text, options, callback)
@@ -1265,6 +1355,8 @@ function Library:CreateWindow(options)
 
                 local item, st = baseItemFrame(44)
                 item.ClipsDescendants = true
+
+                local enabled = true
 
                 local title = Instance.new("TextLabel")
                 title.BackgroundTransparency = 1
@@ -1322,6 +1414,9 @@ function Library:CreateWindow(options)
                     end
                     if currentKey then
                         bindToken = window:_bindKey(currentKey, function()
+                            if not enabled then
+                                return
+                            end
                             if callback then
                                 callback(currentKey)
                             end
@@ -1376,6 +1471,9 @@ function Library:CreateWindow(options)
                 end)
 
                 box.MouseButton1Click:Connect(function()
+                    if not enabled then
+                        return
+                    end
                     if waiting then
                         stopCapture()
                     else
@@ -1388,13 +1486,27 @@ function Library:CreateWindow(options)
                     setKey(currentKey)
                 end
                 tab._updateCanvas()
-                return {
+                local ctl = {
                     Get = function() return currentKey end,
                     Set = function(_, key)
                         setKey(key)
                     end,
                     Clear = function()
                         setKey(nil)
+                    end,
+                    SetEnabled = function(_, v)
+                        enabled = not not v
+                        item.Visible = enabled
+                        if not enabled then
+                            waiting = false
+                            safeDisconnect(keyConn)
+                            keyConn = nil
+                            if bindToken then
+                                window:_unbindKey(bindToken)
+                                bindToken = nil
+                            end
+                        end
+                        tab._updateCanvas()
                     end,
                     SetText = function(_, v)
                         title.Text = tostring(v)
@@ -1404,6 +1516,8 @@ function Library:CreateWindow(options)
                         callback = fn
                     end
                 }
+                table.insert(section._controls, ctl)
+                return ctl
             end
 
             function section:AddLabel(text, options)
@@ -1428,7 +1542,7 @@ function Library:CreateWindow(options)
                 lbl.Parent = item
 
                 tab._updateCanvas()
-                return {
+                local ctl = {
                     SetText = function(_, v)
                         lbl.Text = tostring(v)
                         tab._updateCanvas()
@@ -1440,8 +1554,14 @@ function Library:CreateWindow(options)
                         lbl.TextSize = s
                         tab._updateCanvas()
                     end,
+                    SetEnabled = function(_, v)
+                        item.Visible = not not v
+                        tab._updateCanvas()
+                    end,
                     Instance = lbl
                 }
+                table.insert(section._controls, ctl)
+                return ctl
             end
 
             function section:AddImage(imageId, options)
@@ -1461,15 +1581,21 @@ function Library:CreateWindow(options)
                 img.Parent = item
 
                 tab._updateCanvas()
-                return {
+                local ctl = {
                     SetImage = function(_, v)
                         img.Image = tostring(v)
                     end,
                     SetImageColor3 = function(_, c)
                         img.ImageColor3 = c
                     end,
+                    SetEnabled = function(_, v)
+                        item.Visible = not not v
+                        tab._updateCanvas()
+                    end,
                     Instance = img
                 }
+                table.insert(section._controls, ctl)
+                return ctl
             end
 
             function section:AddTextbox(text, options, callback)
@@ -1480,6 +1606,8 @@ function Library:CreateWindow(options)
                 options = options or {}
 
                 local item, st = baseItemFrame(44)
+
+                local enabled = true
 
                 local title = Instance.new("TextLabel")
                 title.BackgroundTransparency = 1
@@ -1524,6 +1652,9 @@ function Library:CreateWindow(options)
                 end
 
                 box.Focused:Connect(function()
+                    if not enabled then
+                        return
+                    end
                     tween(item, { BackgroundColor3 = theme.Header })
                     tween(st, { Color = theme.StrokeHover })
                     tween(boxStroke, { Color = theme.NeonStroke })
@@ -1532,16 +1663,26 @@ function Library:CreateWindow(options)
                     tween(item, { BackgroundColor3 = theme.Background })
                     tween(st, { Color = theme.Stroke })
                     tween(boxStroke, { Color = theme.Stroke })
+                    if not enabled then
+                        return
+                    end
                     if enterPressed or options.FireOnFocusLost then
                         fire(box.Text)
                     end
                 end)
 
                 tab._updateCanvas()
-                return {
+                local ctl = {
                     Get = function() return box.Text end,
                     Set = function(_, v)
                         box.Text = tostring(v)
+                    end,
+                    SetEnabled = function(_, v)
+                        enabled = not not v
+                        item.Visible = enabled
+                        box.TextEditable = enabled
+                        box.Active = enabled
+                        tab._updateCanvas()
                     end,
                     SetText = function(_, v)
                         title.Text = tostring(v)
@@ -1555,6 +1696,8 @@ function Library:CreateWindow(options)
                     end,
                     Instance = box
                 }
+                table.insert(section._controls, ctl)
+                return ctl
             end
 
             function section:AddSlider(text, options, callback)
@@ -1563,6 +1706,8 @@ function Library:CreateWindow(options)
                     options = {}
                 end
                 options = options or {}
+
+                local enabled = true
 
                 local min = options.Min or 0
                 local max = options.Max or 100
@@ -1657,6 +1802,9 @@ function Library:CreateWindow(options)
                 end
 
                 barBg.InputBegan:Connect(function(input)
+                    if not enabled then
+                        return
+                    end
                     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                         drag = true
                         tween(st, { Color = theme.StrokeHover })
@@ -1672,6 +1820,9 @@ function Library:CreateWindow(options)
                 end)
 
                 UserInputService.InputChanged:Connect(function(input)
+                    if not enabled then
+                        return
+                    end
                     if drag and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
                         setFromInput(input)
                     end
@@ -1683,10 +1834,16 @@ function Library:CreateWindow(options)
 
                 setValue(value, false)
                 tab._updateCanvas()
-                return {
+                local ctl = {
                     Get = function() return value end,
                     Set = function(_, v)
                         setValue(v, false)
+                    end,
+                    SetEnabled = function(_, v)
+                        enabled = not not v
+                        item.Visible = enabled
+                        drag = false
+                        tab._updateCanvas()
                     end,
                     SetText = function(_, v)
                         title.Text = tostring(v)
@@ -1696,6 +1853,8 @@ function Library:CreateWindow(options)
                         callback = fn
                     end
                 }
+                table.insert(section._controls, ctl)
+                return ctl
             end
 
             function section:AddDropdown(text, options, callback)
@@ -1707,6 +1866,8 @@ function Library:CreateWindow(options)
                     options = {}
                 end
                 options = options or {}
+
+                local enabled = true
 
                 local list = options.Options or {}
                 local selected = options.Default
@@ -1896,6 +2057,9 @@ function Library:CreateWindow(options)
                 end)
 
                 openBtn.MouseButton1Click:Connect(function()
+                    if not enabled then
+                        return
+                    end
                     isOpen = not isOpen
                     arrow.Text = isOpen and "^" or "v"
                     if isOpen then
@@ -1906,12 +2070,20 @@ function Library:CreateWindow(options)
                 end)
 
                 tab._updateCanvas()
-                return {
+                local ctl = {
                     Get = function() return selected end,
                     Set = function(_, v)
                         selected = v
                         valueLabel.Text = selected and tostring(selected) or (options.Placeholder or "Select")
                         valueLabel.TextColor3 = selected and theme.Text or theme.SubText
+                    end,
+                    SetEnabled = function(_, v)
+                        enabled = not not v
+                        item.Visible = enabled
+                        if not enabled and isOpen then
+                            closeInline()
+                        end
+                        tab._updateCanvas()
                     end,
                     SetText = function(_, v)
                         title.Text = tostring(v)
@@ -1928,6 +2100,8 @@ function Library:CreateWindow(options)
                         callback = fn
                     end
                 }
+                table.insert(section._controls, ctl)
+                return ctl
             end
 
             function section:AddMultiDropdown(text, options, callback)
@@ -1939,6 +2113,8 @@ function Library:CreateWindow(options)
                     options = {}
                 end
                 options = options or {}
+
+                local enabled = true
 
                 local list = options.Options or {}
                 local selectedMap = {}
@@ -2165,6 +2341,9 @@ function Library:CreateWindow(options)
                 end)
 
                 openBtn.MouseButton1Click:Connect(function()
+                    if not enabled then
+                        return
+                    end
                     isOpen = not isOpen
                     arrow.Text = isOpen and "^" or "v"
                     if isOpen then
@@ -2176,7 +2355,7 @@ function Library:CreateWindow(options)
 
                 refreshValueText()
                 tab._updateCanvas()
-                return {
+                local ctl = {
                     Get = function() return selectedArray() end,
                     Set = function(_, arr)
                         selectedMap = {}
@@ -2187,6 +2366,14 @@ function Library:CreateWindow(options)
                         if isOpen then
                             openInline()
                         end
+                    end,
+                    SetEnabled = function(_, v)
+                        enabled = not not v
+                        item.Visible = enabled
+                        if not enabled and isOpen then
+                            closeInline()
+                        end
+                        tab._updateCanvas()
                     end,
                     SetOptions = function(_, arr)
                         list = arr or {}
@@ -2204,6 +2391,8 @@ function Library:CreateWindow(options)
                         callback = fn
                     end
                 }
+                table.insert(section._controls, ctl)
+                return ctl
             end
 
             tab._updateCanvas()
