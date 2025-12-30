@@ -419,14 +419,23 @@ function Library:CreateWindow(options)
             secPad.PaddingBottom = UDim.new(0, 12)
             secPad.Parent = sectionFrame
 
+            local sectionLayout = Instance.new("UIListLayout")
+            sectionLayout.FillDirection = Enum.FillDirection.Vertical
+            sectionLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+            sectionLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            sectionLayout.Padding = UDim.new(0, 10)
+            sectionLayout.Parent = sectionFrame
+
             local secTitle = createLabel(sectionFrame, sectionName, Enum.Font.GothamBold, 14, theme.Text)
             secTitle.Size = UDim2.new(1, 0, 0, 20)
+            secTitle.LayoutOrder = 1
 
             local secList = Instance.new("Frame")
             secList.Size = UDim2.new(1, 0, 0, 0)
             secList.AutomaticSize = Enum.AutomaticSize.Y
             secList.BackgroundTransparency = 1
             secList.Parent = sectionFrame
+            secList.LayoutOrder = 2
 
             local secListLayout = Instance.new("UIListLayout")
             secListLayout.FillDirection = Enum.FillDirection.Vertical
@@ -439,20 +448,18 @@ function Library:CreateWindow(options)
                 tab._updateCanvas()
             end)
 
-            local spacer = Instance.new("Frame")
-            spacer.BackgroundTransparency = 1
-            spacer.Size = UDim2.new(1, 0, 0, 2)
-            spacer.LayoutOrder = 1
-            spacer.Parent = secList
-
             local section = {}
 
+            local elementOrder = 0
+
             local function baseItemFrame(height)
+                elementOrder += 1
                 local item = Instance.new("Frame")
                 item.Size = UDim2.new(1, 0, 0, height)
                 item.BackgroundColor3 = theme.Background
                 item.BorderSizePixel = 0
                 item.Parent = secList
+                item.LayoutOrder = elementOrder
                 createRound(item, UDim.new(0, 8))
                 local st = createStroke(item, theme.Stroke, 1)
                 return item, st
