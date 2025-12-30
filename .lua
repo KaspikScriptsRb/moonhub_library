@@ -340,6 +340,9 @@ function Library:CreateWindow(options)
     end)
 
     local function setActiveTab(tabObj)
+        if not tabObj or tabObj.Enabled == false then
+            return
+        end
         if window._activeTab == tabObj then return end
 
         if window._activeTab then
@@ -552,11 +555,27 @@ function Library:CreateWindow(options)
         tab.Stroke = tabStroke
         tab.Text = tabText
         tab.Page = page
+        tab.Enabled = true
         tab._leftCol = leftCol
         tab._rightCol = rightCol
         tab._leftLayout = leftLayout
         tab._rightLayout = rightLayout
         tab._updateCanvas = updateCanvas
+
+        function tab:SetEnabled(v)
+            tab.Enabled = not not v
+            tab.Button.Visible = tab.Enabled
+            tab.Page.Visible = tab.Enabled and (window._activeTab == tab)
+            tab._updateCanvas()
+            if window._activeTab == tab and not tab.Enabled then
+                for _, t in ipairs(window._tabs) do
+                    if t.Enabled ~= false then
+                        setActiveTab(t)
+                        break
+                    end
+                end
+            end
+        end
 
         function tab:AddSection(sectionName)
             sectionName = sectionName or "Section"
@@ -612,6 +631,13 @@ function Library:CreateWindow(options)
             end)
 
             local section = {}
+
+            section.Enabled = true
+            function section:SetEnabled(v)
+                section.Enabled = not not v
+                sectionFrame.Visible = section.Enabled
+                tab._updateCanvas()
+            end
 
             local elementOrder = 0
 
@@ -861,6 +887,7 @@ function Library:CreateWindow(options)
                 keyBtn.Parent = item
                 createRound(keyBtn, UDim.new(0, 6))
                 local keyStroke = createStroke(keyBtn, theme.Stroke, 1)
+                keyBtn.Visible = showKeybind
 
                 local keyText = Instance.new("TextLabel")
                 keyText.BackgroundTransparency = 1
@@ -1061,6 +1088,7 @@ function Library:CreateWindow(options)
                 keyBtn.Parent = item
                 createRound(keyBtn, UDim.new(0, 6))
                 local keyStroke = createStroke(keyBtn, theme.Stroke, 1)
+                keyBtn.Visible = showKeybind
 
                 local keyText = Instance.new("TextLabel")
                 keyText.BackgroundTransparency = 1
