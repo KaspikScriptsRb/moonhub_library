@@ -139,12 +139,13 @@ function Library:CreateWindow(options)
     container.Parent = gui
     createRound(container, UDim.new(0, 10))
     createStroke(container, theme.Accent, 1.5)
-    makeDraggable(container)
 
     local header = Instance.new("Frame")
     header.Size = UDim2.new(1, 0, 0, 52)
     header.BackgroundTransparency = 1
     header.Parent = container
+
+    makeDraggable(container, header)
 
     local icon = createIcon(header, options.Icon or "rbxassetid://13161991129", theme.Accent)
     icon.Size = UDim2.new(0, 22, 0, 22)
@@ -203,6 +204,7 @@ function Library:CreateWindow(options)
     sidebar.Size = UDim2.new(0, 190, 1, 0)
     sidebar.BackgroundColor3 = theme.Primary
     sidebar.BorderSizePixel = 0
+    sidebar.ClipsDescendants = true
     sidebar.Parent = body
     createRound(sidebar, UDim.new(0, 10))
     createStroke(sidebar, theme.Stroke, 1)
@@ -231,6 +233,7 @@ function Library:CreateWindow(options)
     content.Size = UDim2.new(1, -202, 1, 0)
     content.BackgroundColor3 = theme.Background
     content.BorderSizePixel = 0
+    content.ClipsDescendants = true
     content.Parent = body
     createRound(content, UDim.new(0, 10))
     createStroke(content, theme.Stroke, 1)
@@ -333,6 +336,13 @@ function Library:CreateWindow(options)
         page.AutomaticCanvasSize = Enum.AutomaticSize.None
         page.Visible = false
         page.Parent = pages
+
+        local pagePad = Instance.new("UIPadding")
+        pagePad.PaddingTop = UDim.new(0, 2)
+        pagePad.PaddingLeft = UDim.new(0, 2)
+        pagePad.PaddingRight = UDim.new(0, 2)
+        pagePad.PaddingBottom = UDim.new(0, 2)
+        pagePad.Parent = page
 
         local columns = Instance.new("Frame")
         columns.Name = "Columns"
@@ -627,19 +637,19 @@ function Library:CreateWindow(options)
                 createRound(box, UDim.new(0, 5))
                 local boxStroke = createStroke(box, state and theme.NeonStroke or theme.Stroke, 1)
 
-                local check = Instance.new("TextLabel")
-                check.BackgroundTransparency = 1
-                check.Size = UDim2.new(1, 0, 1, 0)
-                check.Font = Enum.Font.GothamBold
-                check.Text = state and "✓" or ""
-                check.TextColor3 = theme.Text
-                check.TextSize = 14
-                check.Parent = box
+                local indicator = Instance.new("Frame")
+                indicator.Size = UDim2.new(0, 10, 0, 10)
+                indicator.Position = UDim2.new(0.5, -5, 0.5, -5)
+                indicator.BackgroundColor3 = theme.Text
+                indicator.BorderSizePixel = 0
+                indicator.BackgroundTransparency = state and 0 or 1
+                indicator.Parent = box
+                createRound(indicator, UDim.new(1, 0))
 
                 local function render()
                     tween(box, { BackgroundColor3 = state and theme.Accent or theme.Primary })
                     tween(boxStroke, { Color = state and theme.NeonStroke or theme.Stroke })
-                    check.Text = state and "✓" or ""
+                    indicator.BackgroundTransparency = state and 0 or 1
                 end
 
                 btn.MouseEnter:Connect(function()
@@ -679,8 +689,13 @@ function Library:CreateWindow(options)
 
             function section:AddLabel(text, options)
                 options = options or {}
-                local item, _ = baseItemFrame(options.Height or 30)
+                elementOrder += 1
+                local item = Instance.new("Frame")
+                item.Size = UDim2.new(1, 0, 0, options.Height or 30)
                 item.BackgroundTransparency = 1
+                item.BorderSizePixel = 0
+                item.LayoutOrder = elementOrder
+                item.Parent = secList
 
                 local lbl = Instance.new("TextLabel")
                 lbl.BackgroundTransparency = 1
@@ -764,6 +779,7 @@ function Library:CreateWindow(options)
                 box.Position = UDim2.new(0, 12, 0, 22)
                 box.BackgroundColor3 = theme.Primary
                 box.BorderSizePixel = 0
+                box.ClipsDescendants = true
                 box.Font = Enum.Font.Gotham
                 box.Text = options.Default or ""
                 box.PlaceholderText = options.Placeholder or ""
@@ -774,6 +790,11 @@ function Library:CreateWindow(options)
                 box.Parent = item
                 createRound(box, UDim.new(0, 6))
                 local boxStroke = createStroke(box, theme.Stroke, 1)
+
+                local boxPad = Instance.new("UIPadding")
+                boxPad.PaddingLeft = UDim.new(0, 8)
+                boxPad.PaddingRight = UDim.new(0, 8)
+                boxPad.Parent = box
 
                 local function fire(v)
                     if callback then
@@ -992,9 +1013,15 @@ function Library:CreateWindow(options)
                 openBtn.Position = UDim2.new(0, 12, 0, 22)
                 openBtn.AutoButtonColor = false
                 openBtn.Text = ""
+                openBtn.ClipsDescendants = true
                 openBtn.Parent = item
                 createRound(openBtn, UDim.new(0, 6))
                 local openStroke = createStroke(openBtn, theme.Stroke, 1)
+
+                local openPad = Instance.new("UIPadding")
+                openPad.PaddingLeft = UDim.new(0, 2)
+                openPad.PaddingRight = UDim.new(0, 2)
+                openPad.Parent = openBtn
 
                 local valueLabel = Instance.new("TextLabel")
                 valueLabel.BackgroundTransparency = 1
@@ -1005,6 +1032,7 @@ function Library:CreateWindow(options)
                 valueLabel.TextColor3 = selected and theme.Text or theme.SubText
                 valueLabel.TextSize = 13
                 valueLabel.TextXAlignment = Enum.TextXAlignment.Left
+                valueLabel.TextTruncate = Enum.TextTruncate.AtEnd
                 valueLabel.Parent = openBtn
 
                 local arrow = Instance.new("TextLabel")
@@ -1018,11 +1046,15 @@ function Library:CreateWindow(options)
                 arrow.TextXAlignment = Enum.TextXAlignment.Center
                 arrow.Parent = openBtn
 
-                local listFrame = Instance.new("Frame")
+                local listFrame = Instance.new("ScrollingFrame")
                 listFrame.BackgroundTransparency = 1
                 listFrame.Size = UDim2.new(1, -24, 0, 0)
                 listFrame.Position = UDim2.new(0, 12, 0, 48)
                 listFrame.ClipsDescendants = true
+                listFrame.BorderSizePixel = 0
+                listFrame.ScrollBarThickness = 0
+                listFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+                listFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
                 listFrame.Parent = item
 
                 local listLayout = Instance.new("UIListLayout")
@@ -1195,9 +1227,15 @@ function Library:CreateWindow(options)
                 openBtn.Position = UDim2.new(0, 12, 0, 22)
                 openBtn.AutoButtonColor = false
                 openBtn.Text = ""
+                openBtn.ClipsDescendants = true
                 openBtn.Parent = item
                 createRound(openBtn, UDim.new(0, 6))
                 local openStroke = createStroke(openBtn, theme.Stroke, 1)
+
+                local openPad = Instance.new("UIPadding")
+                openPad.PaddingLeft = UDim.new(0, 2)
+                openPad.PaddingRight = UDim.new(0, 2)
+                openPad.Parent = openBtn
 
                 local valueLabel = Instance.new("TextLabel")
                 valueLabel.BackgroundTransparency = 1
@@ -1208,6 +1246,7 @@ function Library:CreateWindow(options)
                 valueLabel.TextColor3 = theme.SubText
                 valueLabel.TextSize = 13
                 valueLabel.TextXAlignment = Enum.TextXAlignment.Left
+                valueLabel.TextTruncate = Enum.TextTruncate.AtEnd
                 valueLabel.Parent = openBtn
 
                 local arrow = Instance.new("TextLabel")
@@ -1221,12 +1260,20 @@ function Library:CreateWindow(options)
                 arrow.TextXAlignment = Enum.TextXAlignment.Center
                 arrow.Parent = openBtn
 
-                local listFrame = Instance.new("Frame")
+                local listFrame = Instance.new("ScrollingFrame")
                 listFrame.BackgroundTransparency = 1
                 listFrame.Size = UDim2.new(1, -24, 0, 0)
                 listFrame.Position = UDim2.new(0, 12, 0, 48)
                 listFrame.ClipsDescendants = true
+                listFrame.BorderSizePixel = 0
+                listFrame.ScrollBarThickness = 0
+                listFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+                listFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
                 listFrame.Parent = item
+
+                local listPad = Instance.new("UIPadding")
+                listPad.PaddingRight = UDim.new(0, 2)
+                listPad.Parent = listFrame
 
                 local listLayout = Instance.new("UIListLayout")
                 listLayout.FillDirection = Enum.FillDirection.Vertical
@@ -1281,16 +1328,14 @@ function Library:CreateWindow(options)
                         t.TextXAlignment = Enum.TextXAlignment.Left
                         t.Parent = b
 
-                        local chk = Instance.new("TextLabel")
-                        chk.BackgroundTransparency = 1
-                        chk.Size = UDim2.new(0, 18, 1, 0)
-                        chk.Position = UDim2.new(1, -22, 0, 0)
-                        chk.Font = Enum.Font.GothamBold
-                        chk.Text = selectedMap[opt] and "✓" or ""
-                        chk.TextColor3 = theme.Accent
-                        chk.TextSize = 14
-                        chk.TextXAlignment = Enum.TextXAlignment.Center
+                        local chk = Instance.new("Frame")
+                        chk.Size = UDim2.new(0, 10, 0, 10)
+                        chk.Position = UDim2.new(1, -20, 0.5, -5)
+                        chk.BackgroundColor3 = theme.Accent
+                        chk.BorderSizePixel = 0
+                        chk.BackgroundTransparency = selectedMap[opt] and 0 or 1
                         chk.Parent = b
+                        createRound(chk, UDim.new(1, 0))
 
                         b.MouseEnter:Connect(function()
                             tween(b, { BackgroundColor3 = theme.Header })
@@ -1303,7 +1348,7 @@ function Library:CreateWindow(options)
 
                         b.MouseButton1Click:Connect(function()
                             selectedMap[opt] = not selectedMap[opt]
-                            chk.Text = selectedMap[opt] and "✓" or ""
+                            chk.BackgroundTransparency = selectedMap[opt] and 0 or 1
                             refreshValueText()
                             if callback then
                                 local arr = selectedArray()
