@@ -1,3 +1,4 @@
+--Open Source UI by @qkaspq
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local CoreGui = game:GetService("CoreGui")
