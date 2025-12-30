@@ -110,6 +110,32 @@ local function createIcon(parent, iconId, color)
     return img
 end
 
+ local function safeDisconnect(conn)
+     if conn then
+         pcall(function()
+             conn:Disconnect()
+         end)
+     end
+ end
+
+ local function normalizeKey(key)
+     if key == nil then
+         return nil
+     end
+     if typeof(key) == "EnumItem" and key.EnumType == Enum.KeyCode then
+         return key
+     end
+     if type(key) == "string" then
+         local ok, kc = pcall(function()
+             return Enum.KeyCode[key]
+         end)
+         if ok then
+             return kc
+         end
+     end
+     return nil
+ end
+
 local Library = {}
 Library.__index = Library
 
@@ -249,6 +275,33 @@ function Library:CreateWindow(options)
     pages.Name = "Pages"
     pages.Parent = content
 
+     local overlay = Instance.new("Frame")
+     overlay.Name = "MoonHubUI_Overlay"
+     overlay.BackgroundTransparency = 1
+     overlay.Size = UDim2.new(1, 0, 1, 0)
+     overlay.Position = UDim2.new(0, 0, 0, 0)
+     overlay.ZIndex = 200
+     overlay.Visible = false
+     overlay.Parent = gui
+
+     local overlayBlocker = Instance.new("TextButton")
+     overlayBlocker.Name = "Blocker"
+     overlayBlocker.BackgroundTransparency = 1
+     overlayBlocker.Text = ""
+     overlayBlocker.AutoButtonColor = false
+     overlayBlocker.Size = UDim2.new(1, 0, 1, 0)
+     overlayBlocker.Position = UDim2.new(0, 0, 0, 0)
+     overlayBlocker.ZIndex = 200
+     overlayBlocker.Parent = overlay
+
+     local overlayHost = Instance.new("Frame")
+     overlayHost.Name = "Host"
+     overlayHost.BackgroundTransparency = 1
+     overlayHost.Size = UDim2.new(1, 0, 1, 0)
+     overlayHost.Position = UDim2.new(0, 0, 0, 0)
+     overlayHost.ZIndex = 201
+     overlayHost.Parent = overlay
+
     window._gui = gui
     window._container = container
     window._body = body
@@ -256,6 +309,15 @@ function Library:CreateWindow(options)
     window._pages = pages
     window._tabs = {}
     window._activeTab = nil
+
+    window._binds = {}
+    window._bindConn = nil
+
+     window._overlay = overlay
+     window._overlayHost = overlayHost
+     window._overlayBlocker = overlayBlocker
+     window._overlayCloseConn = nil
+     window._overlayContent = nil
 
     local isCollapsed = false
     local originalSize = container.Size
@@ -291,6 +353,96 @@ function Library:CreateWindow(options)
         tween(tabObj.Button, { BackgroundColor3 = theme.Accent })
         tween(tabObj.Stroke, { Color = theme.NeonStroke })
     end
+
+     function window:CloseOverlay()
+         if window._overlayContent and window._overlayContent.Parent then
+             window._overlayContent:Destroy()
+         end
+         window._overlayContent = nil
+         window._overlay.Visible = false
+         safeDisconnect(window._overlayCloseConn)
+         window._overlayCloseConn = nil
+     end
+
+     function window:OpenOverlay(buildFn, anchorAbsPos, anchorAbsSize, onClose)
+         window:CloseOverlay()
+         window._overlay.Visible = true
+
+         local contentFrame = buildFn(window._overlayHost)
+         window._overlayContent = contentFrame
+         contentFrame.ZIndex = 210
+
+         local viewX = window._container.AbsolutePosition.X
+         local viewY = window._container.AbsolutePosition.Y
+         local viewW = window._container.AbsoluteSize.X
+         local viewH = window._container.AbsoluteSize.Y
+
+         local popupW = contentFrame.AbsoluteSize.X
+         local popupH = contentFrame.AbsoluteSize.Y
+         local px = anchorAbsPos.X
+         local py = anchorAbsPos.Y + anchorAbsSize.Y + 6
+
+         if popupW > 0 and popupH > 0 then
+             px = math.clamp(px, viewX + 10, (viewX + viewW) - popupW - 10)
+             py = math.clamp(py, viewY + 10, (viewY + viewH) - popupH - 10)
+         end
+
+         contentFrame.Position = UDim2.fromOffset(px, py)
+         window._overlayCloseConn = overlayBlocker.MouseButton1Click:Connect(function()
+             window:CloseOverlay()
+             if onClose then
+                 task.spawn(onClose)
+             end
+         end)
+     end
+
+     function window:_bindKey(key, fn)
+         local kc = normalizeKey(key)
+         if not kc or not fn then
+             return nil
+         end
+         local list = window._binds[kc]
+         if not list then
+             list = {}
+             window._binds[kc] = list
+         end
+         table.insert(list, fn)
+         return { KeyCode = kc, Fn = fn }
+     end
+
+     function window:_unbindKey(token)
+         if not token or not token.KeyCode or not token.Fn then
+             return
+         end
+         local list = window._binds[token.KeyCode]
+         if not list then
+             return
+         end
+         for i = #list, 1, -1 do
+             if list[i] == token.Fn then
+                 table.remove(list, i)
+             end
+         end
+     end
+
+     if window._bindConn == nil then
+         window._bindConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+             if gameProcessed then
+                 return
+             end
+             if UserInputService:GetFocusedTextBox() then
+                 return
+             end
+             local kc = input.KeyCode
+             local list = kc and window._binds[kc]
+             if not list then
+                 return
+             end
+             for _, fn in ipairs(list) do
+                 task.spawn(fn)
+             end
+         end)
+     end
 
     function window:AddTab(tabName)
         tabName = tabName or "Tab"
@@ -525,6 +677,16 @@ function Library:CreateWindow(options)
             end
 
             function section:AddToggle(text, default, callback)
+                local options
+                if type(default) == "table" then
+                    options = default
+                    default = options.Default
+                    if callback == nil and type(options.Callback) == "function" then
+                        callback = options.Callback
+                    end
+                end
+                options = options or {}
+
                 local item, st = baseItemFrame(36)
 
                 local state = default and true or false
@@ -589,7 +751,28 @@ function Library:CreateWindow(options)
                     end
                 end)
 
+                local bindToken
+                local function setKeybind(key)
+                    if bindToken then
+                        window:_unbindKey(bindToken)
+                        bindToken = nil
+                    end
+                    local kc = normalizeKey(key)
+                    if kc then
+                        bindToken = window:_bindKey(kc, function()
+                            state = not state
+                            render()
+                            if callback then
+                                callback(state)
+                            end
+                        end)
+                    end
+                end
+
                 render()
+                if options.Keybind or options.Key then
+                    setKeybind(options.Keybind or options.Key)
+                end
                 tab._updateCanvas()
                 return {
                     Get = function() return state end,
@@ -601,11 +784,30 @@ function Library:CreateWindow(options)
                     SetText = function(_, v)
                         lbl.Text = tostring(v)
                         tab._updateCanvas()
+                    end,
+                    GetKeybind = function()
+                        return bindToken and bindToken.KeyCode or nil
+                    end,
+                    SetKeybind = function(_, key)
+                        setKeybind(key)
+                    end,
+                    ClearKeybind = function()
+                        setKeybind(nil)
                     end
                 }
             end
 
             function section:AddCheckbox(text, default, callback)
+                local options
+                if type(default) == "table" then
+                    options = default
+                    default = options.Default
+                    if callback == nil and type(options.Callback) == "function" then
+                        callback = options.Callback
+                    end
+                end
+                options = options or {}
+
                 local item, st = baseItemFrame(36)
 
                 local state = default and true or false
@@ -671,7 +873,28 @@ function Library:CreateWindow(options)
                     end
                 end)
 
+                local bindToken
+                local function setKeybind(key)
+                    if bindToken then
+                        window:_unbindKey(bindToken)
+                        bindToken = nil
+                    end
+                    local kc = normalizeKey(key)
+                    if kc then
+                        bindToken = window:_bindKey(kc, function()
+                            state = not state
+                            render()
+                            if callback then
+                                callback(state)
+                            end
+                        end)
+                    end
+                end
+
                 render()
+                if options.Keybind or options.Key then
+                    setKeybind(options.Keybind or options.Key)
+                end
                 tab._updateCanvas()
                 return {
                     Get = function() return state end,
@@ -683,6 +906,165 @@ function Library:CreateWindow(options)
                     SetText = function(_, v)
                         lbl.Text = tostring(v)
                         tab._updateCanvas()
+                    end,
+                    GetKeybind = function()
+                        return bindToken and bindToken.KeyCode or nil
+                    end,
+                    SetKeybind = function(_, key)
+                        setKeybind(key)
+                    end,
+                    ClearKeybind = function()
+                        setKeybind(nil)
+                    end
+                }
+            end
+
+            function section:AddKeybind(text, options, callback)
+                if type(options) == "function" and callback == nil then
+                    callback = options
+                    options = {}
+                end
+                options = options or {}
+
+                local item, st = baseItemFrame(44)
+                item.ClipsDescendants = true
+
+                local title = Instance.new("TextLabel")
+                title.BackgroundTransparency = 1
+                title.Size = UDim2.new(1, -12, 0, 18)
+                title.Position = UDim2.new(0, 12, 0, 4)
+                title.Font = Enum.Font.GothamSemibold
+                title.Text = text or "Keybind"
+                title.TextColor3 = theme.Text
+                title.TextSize = 13
+                title.TextXAlignment = Enum.TextXAlignment.Left
+                title.Parent = item
+
+                local box = Instance.new("TextButton")
+                box.BackgroundColor3 = theme.Primary
+                box.BorderSizePixel = 0
+                box.Size = UDim2.new(1, -24, 0, 22)
+                box.Position = UDim2.new(0, 12, 0, 22)
+                box.AutoButtonColor = false
+                box.Text = ""
+                box.Parent = item
+                createRound(box, UDim.new(0, 6))
+                local boxStroke = createStroke(box, theme.Stroke, 1)
+
+                local keyLabel = Instance.new("TextLabel")
+                keyLabel.BackgroundTransparency = 1
+                keyLabel.Size = UDim2.new(1, -12, 1, 0)
+                keyLabel.Position = UDim2.new(0, 10, 0, 0)
+                keyLabel.Font = Enum.Font.Gotham
+                keyLabel.TextColor3 = theme.SubText
+                keyLabel.TextSize = 13
+                keyLabel.TextXAlignment = Enum.TextXAlignment.Left
+                keyLabel.TextTruncate = Enum.TextTruncate.AtEnd
+                keyLabel.Parent = box
+
+                local waiting = false
+                local keyConn
+                local bindToken
+                local currentKey = normalizeKey(options.Default)
+
+                local function renderKey()
+                    if waiting then
+                        keyLabel.Text = options.WaitText or "Press a key..."
+                        keyLabel.TextColor3 = theme.SubText
+                    else
+                        keyLabel.Text = currentKey and currentKey.Name or (options.NoneText or "None")
+                        keyLabel.TextColor3 = currentKey and theme.Text or theme.SubText
+                    end
+                end
+
+                local function setKey(key)
+                    currentKey = normalizeKey(key)
+                    if bindToken then
+                        window:_unbindKey(bindToken)
+                        bindToken = nil
+                    end
+                    if currentKey then
+                        bindToken = window:_bindKey(currentKey, function()
+                            if callback then
+                                callback(currentKey)
+                            end
+                        end)
+                    end
+                    renderKey()
+                end
+
+                local function stopCapture()
+                    waiting = false
+                    safeDisconnect(keyConn)
+                    keyConn = nil
+                    tween(boxStroke, { Color = theme.Stroke })
+                    renderKey()
+                end
+
+                local function startCapture()
+                    if waiting then
+                        return
+                    end
+                    waiting = true
+                    tween(boxStroke, { Color = theme.NeonStroke })
+                    renderKey()
+                    safeDisconnect(keyConn)
+                    keyConn = UserInputService.InputBegan:Connect(function(input, gp)
+                        if gp then
+                            return
+                        end
+                        if input.UserInputType == Enum.UserInputType.Keyboard then
+                            if input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.Backspace then
+                                setKey(nil)
+                                stopCapture()
+                                return
+                            end
+                            setKey(input.KeyCode)
+                            stopCapture()
+                        end
+                    end)
+                end
+
+                box.MouseEnter:Connect(function()
+                    tween(box, { BackgroundColor3 = theme.PrimaryHover })
+                    if not waiting then
+                        tween(boxStroke, { Color = theme.StrokeHover })
+                    end
+                    tween(st, { Color = theme.StrokeHover })
+                end)
+                box.MouseLeave:Connect(function()
+                    tween(box, { BackgroundColor3 = theme.Primary })
+                    tween(boxStroke, { Color = waiting and theme.NeonStroke or theme.Stroke })
+                    tween(st, { Color = theme.Stroke })
+                end)
+
+                box.MouseButton1Click:Connect(function()
+                    if waiting then
+                        stopCapture()
+                    else
+                        startCapture()
+                    end
+                end)
+
+                renderKey()
+                if currentKey then
+                    setKey(currentKey)
+                end
+                tab._updateCanvas()
+                return {
+                    Get = function() return currentKey end,
+                    Set = function(_, key)
+                        setKey(key)
+                    end,
+                    Clear = function()
+                        setKey(nil)
+                    end,
+                    SetText = function(_, v)
+                        title.Text = tostring(v)
+                        tab._updateCanvas()
+                    end,
+                    SetCallback = function(_, fn)
+                        callback = fn
                     end
                 }
             end
@@ -1046,86 +1428,101 @@ function Library:CreateWindow(options)
                 arrow.TextXAlignment = Enum.TextXAlignment.Center
                 arrow.Parent = openBtn
 
-                local listFrame = Instance.new("ScrollingFrame")
-                listFrame.BackgroundTransparency = 1
-                listFrame.Size = UDim2.new(1, -24, 0, 0)
-                listFrame.Position = UDim2.new(0, 12, 0, 48)
-                listFrame.ClipsDescendants = true
-                listFrame.BorderSizePixel = 0
-                listFrame.ScrollBarThickness = 0
-                listFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-                listFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-                listFrame.Parent = item
-
-                local listLayout = Instance.new("UIListLayout")
-                listLayout.FillDirection = Enum.FillDirection.Vertical
-                listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-                listLayout.Padding = UDim.new(0, 6)
-                listLayout.Parent = listFrame
-
                 local isOpen = false
 
-                local function rebuild()
-                    for _, c in ipairs(listFrame:GetChildren()) do
-                        if c:IsA("TextButton") then
-                            c:Destroy()
-                        end
-                    end
-
-                    for i, opt in ipairs(list) do
-                        local b = Instance.new("TextButton")
-                        b.Size = UDim2.new(1, 0, 0, 24)
-                        b.BackgroundColor3 = theme.Background
-                        b.BorderSizePixel = 0
-                        b.Text = ""
-                        b.AutoButtonColor = false
-                        b.LayoutOrder = i
-                        b.Parent = listFrame
-                        createRound(b, UDim.new(0, 6))
-                        local bst = createStroke(b, theme.Stroke, 1)
-
-                        local t = Instance.new("TextLabel")
-                        t.BackgroundTransparency = 1
-                        t.Size = UDim2.new(1, -12, 1, 0)
-                        t.Position = UDim2.new(0, 12, 0, 0)
-                        t.Font = Enum.Font.Gotham
-                        t.Text = tostring(opt)
-                        t.TextColor3 = theme.Text
-                        t.TextSize = 13
-                        t.TextXAlignment = Enum.TextXAlignment.Left
-                        t.Parent = b
-
-                        b.MouseEnter:Connect(function()
-                            tween(b, { BackgroundColor3 = theme.Header })
-                            tween(bst, { Color = theme.StrokeHover })
-                        end)
-                        b.MouseLeave:Connect(function()
-                            tween(b, { BackgroundColor3 = theme.Background })
-                            tween(bst, { Color = theme.Stroke })
-                        end)
-
-                        b.MouseButton1Click:Connect(function()
-                            selected = opt
-                            valueLabel.Text = tostring(opt)
-                            valueLabel.TextColor3 = theme.Text
-                            if callback then
-                                task.spawn(function()
-                                    callback(selected)
-                                end)
-                            end
-                        end)
-                    end
+                local function closeState()
+                    isOpen = false
+                    arrow.Text = "v"
                 end
 
-                local function updateOpenHeight()
-                    local maxVisible = options.MaxVisible or 5
-                    local rowH = 24
+                local function openPopup()
+                    local maxVisible = options.MaxVisible or 6
+                    local rowH = 26
                     local pad = 6
                     local count = math.min(#list, maxVisible)
                     local h = count > 0 and (count * rowH + (count - 1) * pad) or 0
-                    tween(listFrame, { Size = UDim2.new(1, -24, 0, h) })
-                    tween(item, { Size = UDim2.new(1, 0, 0, 44 + h) })
-                    tab._updateCanvas()
+                    local popupH = math.max(34, h + 16)
+
+                    window:OpenOverlay(function(parent)
+                        local popup = Instance.new("Frame")
+                        popup.BackgroundColor3 = theme.Header
+                        popup.BorderSizePixel = 0
+                        popup.Size = UDim2.new(0, openBtn.AbsoluteSize.X, 0, popupH)
+                        popup.Parent = parent
+                        createRound(popup, UDim.new(0, 10))
+                        createStroke(popup, theme.Stroke, 1)
+
+                        local popPad = Instance.new("UIPadding")
+                        popPad.PaddingTop = UDim.new(0, 8)
+                        popPad.PaddingLeft = UDim.new(0, 8)
+                        popPad.PaddingRight = UDim.new(0, 8)
+                        popPad.PaddingBottom = UDim.new(0, 8)
+                        popPad.Parent = popup
+
+                        local sf = Instance.new("ScrollingFrame")
+                        sf.BackgroundTransparency = 1
+                        sf.BorderSizePixel = 0
+                        sf.Size = UDim2.new(1, 0, 1, 0)
+                        sf.ScrollBarThickness = 0
+                        sf.CanvasSize = UDim2.new(0, 0, 0, 0)
+                        sf.AutomaticCanvasSize = Enum.AutomaticSize.Y
+                        sf.Parent = popup
+
+                        local layout = Instance.new("UIListLayout")
+                        layout.FillDirection = Enum.FillDirection.Vertical
+                        layout.SortOrder = Enum.SortOrder.LayoutOrder
+                        layout.Padding = UDim.new(0, pad)
+                        layout.Parent = sf
+
+                        for i, opt in ipairs(list) do
+                            local b = Instance.new("TextButton")
+                            b.Size = UDim2.new(1, 0, 0, rowH)
+                            b.BackgroundColor3 = theme.Background
+                            b.BorderSizePixel = 0
+                            b.Text = ""
+                            b.AutoButtonColor = false
+                            b.LayoutOrder = i
+                            b.Parent = sf
+                            createRound(b, UDim.new(0, 8))
+                            local bst = createStroke(b, theme.Stroke, 1)
+
+                            local t = Instance.new("TextLabel")
+                            t.BackgroundTransparency = 1
+                            t.Size = UDim2.new(1, -12, 1, 0)
+                            t.Position = UDim2.new(0, 12, 0, 0)
+                            t.Font = Enum.Font.Gotham
+                            t.Text = tostring(opt)
+                            t.TextColor3 = theme.Text
+                            t.TextSize = 13
+                            t.TextXAlignment = Enum.TextXAlignment.Left
+                            t.TextTruncate = Enum.TextTruncate.AtEnd
+                            t.Parent = b
+
+                            b.MouseEnter:Connect(function()
+                                tween(b, { BackgroundColor3 = theme.Primary })
+                                tween(bst, { Color = theme.StrokeHover })
+                            end)
+                            b.MouseLeave:Connect(function()
+                                tween(b, { BackgroundColor3 = theme.Background })
+                                tween(bst, { Color = theme.Stroke })
+                            end)
+
+                            b.MouseButton1Click:Connect(function()
+                                selected = opt
+                                valueLabel.Text = tostring(opt)
+                                valueLabel.TextColor3 = theme.Text
+                                if callback then
+                                    task.spawn(function()
+                                        callback(selected)
+                                    end)
+                                end
+                                window:CloseOverlay()
+                                closeState()
+                            end)
+                        end
+
+                        return popup
+                    end, openBtn.AbsolutePosition, openBtn.AbsoluteSize, closeState)
                 end
 
                 openBtn.MouseEnter:Connect(function()
@@ -1143,12 +1540,10 @@ function Library:CreateWindow(options)
                     isOpen = not isOpen
                     arrow.Text = isOpen and "^" or "v"
                     if isOpen then
-                        rebuild()
-                        updateOpenHeight()
+                        openPopup()
                     else
-                        tween(listFrame, { Size = UDim2.new(1, -24, 0, 0) })
-                        tween(item, { Size = UDim2.new(1, 0, 0, 44) })
-                        tab._updateCanvas()
+                        window:CloseOverlay()
+                        closeState()
                     end
                 end)
 
@@ -1167,8 +1562,8 @@ function Library:CreateWindow(options)
                     SetOptions = function(_, arr)
                         list = arr or {}
                         if isOpen then
-                            rebuild()
-                            updateOpenHeight()
+                            window:CloseOverlay()
+                            openPopup()
                         end
                         tab._updateCanvas()
                     end,
@@ -1260,28 +1655,12 @@ function Library:CreateWindow(options)
                 arrow.TextXAlignment = Enum.TextXAlignment.Center
                 arrow.Parent = openBtn
 
-                local listFrame = Instance.new("ScrollingFrame")
-                listFrame.BackgroundTransparency = 1
-                listFrame.Size = UDim2.new(1, -24, 0, 0)
-                listFrame.Position = UDim2.new(0, 12, 0, 48)
-                listFrame.ClipsDescendants = true
-                listFrame.BorderSizePixel = 0
-                listFrame.ScrollBarThickness = 0
-                listFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-                listFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-                listFrame.Parent = item
-
-                local listPad = Instance.new("UIPadding")
-                listPad.PaddingRight = UDim.new(0, 2)
-                listPad.Parent = listFrame
-
-                local listLayout = Instance.new("UIListLayout")
-                listLayout.FillDirection = Enum.FillDirection.Vertical
-                listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-                listLayout.Padding = UDim.new(0, 6)
-                listLayout.Parent = listFrame
-
                 local isOpen = false
+
+                local function closeState()
+                    isOpen = false
+                    arrow.Text = "v"
+                end
 
                 local function refreshValueText()
                     local arr = selectedArray()
@@ -1298,77 +1677,103 @@ function Library:CreateWindow(options)
                     end
                 end
 
-                local function rebuild()
-                    for _, c in ipairs(listFrame:GetChildren()) do
-                        if c:IsA("TextButton") then
-                            c:Destroy()
-                        end
-                    end
 
-                    for i, opt in ipairs(list) do
-                        local b = Instance.new("TextButton")
-                        b.Size = UDim2.new(1, 0, 0, 24)
-                        b.BackgroundColor3 = theme.Background
-                        b.BorderSizePixel = 0
-                        b.Text = ""
-                        b.AutoButtonColor = false
-                        b.LayoutOrder = i
-                        b.Parent = listFrame
-                        createRound(b, UDim.new(0, 6))
-                        local bst = createStroke(b, theme.Stroke, 1)
-
-                        local t = Instance.new("TextLabel")
-                        t.BackgroundTransparency = 1
-                        t.Size = UDim2.new(1, -36, 1, 0)
-                        t.Position = UDim2.new(0, 12, 0, 0)
-                        t.Font = Enum.Font.Gotham
-                        t.Text = tostring(opt)
-                        t.TextColor3 = theme.Text
-                        t.TextSize = 13
-                        t.TextXAlignment = Enum.TextXAlignment.Left
-                        t.Parent = b
-
-                        local chk = Instance.new("Frame")
-                        chk.Size = UDim2.new(0, 10, 0, 10)
-                        chk.Position = UDim2.new(1, -20, 0.5, -5)
-                        chk.BackgroundColor3 = theme.Accent
-                        chk.BorderSizePixel = 0
-                        chk.BackgroundTransparency = selectedMap[opt] and 0 or 1
-                        chk.Parent = b
-                        createRound(chk, UDim.new(1, 0))
-
-                        b.MouseEnter:Connect(function()
-                            tween(b, { BackgroundColor3 = theme.Header })
-                            tween(bst, { Color = theme.StrokeHover })
-                        end)
-                        b.MouseLeave:Connect(function()
-                            tween(b, { BackgroundColor3 = theme.Background })
-                            tween(bst, { Color = theme.Stroke })
-                        end)
-
-                        b.MouseButton1Click:Connect(function()
-                            selectedMap[opt] = not selectedMap[opt]
-                            chk.BackgroundTransparency = selectedMap[opt] and 0 or 1
-                            refreshValueText()
-                            if callback then
-                                local arr = selectedArray()
-                                task.spawn(function()
-                                    callback(arr)
-                                end)
-                            end
-                        end)
-                    end
-                end
-
-                local function updateOpenHeight()
-                    local maxVisible = options.MaxVisible or 5
-                    local rowH = 24
+                local function openPopup()
+                    local maxVisible = options.MaxVisible or 7
+                    local rowH = 26
                     local pad = 6
                     local count = math.min(#list, maxVisible)
                     local h = count > 0 and (count * rowH + (count - 1) * pad) or 0
-                    tween(listFrame, { Size = UDim2.new(1, -24, 0, h) })
-                    tween(item, { Size = UDim2.new(1, 0, 0, 44 + h) })
-                    tab._updateCanvas()
+                    local popupH = math.max(34, h + 16)
+
+                    window:OpenOverlay(function(parent)
+                        local popup = Instance.new("Frame")
+                        popup.BackgroundColor3 = theme.Header
+                        popup.BorderSizePixel = 0
+                        popup.Size = UDim2.new(0, openBtn.AbsoluteSize.X, 0, popupH)
+                        popup.Parent = parent
+                        createRound(popup, UDim.new(0, 10))
+                        createStroke(popup, theme.Stroke, 1)
+
+                        local popPad = Instance.new("UIPadding")
+                        popPad.PaddingTop = UDim.new(0, 8)
+                        popPad.PaddingLeft = UDim.new(0, 8)
+                        popPad.PaddingRight = UDim.new(0, 8)
+                        popPad.PaddingBottom = UDim.new(0, 8)
+                        popPad.Parent = popup
+
+                        local sf = Instance.new("ScrollingFrame")
+                        sf.BackgroundTransparency = 1
+                        sf.BorderSizePixel = 0
+                        sf.Size = UDim2.new(1, 0, 1, 0)
+                        sf.ScrollBarThickness = 0
+                        sf.CanvasSize = UDim2.new(0, 0, 0, 0)
+                        sf.AutomaticCanvasSize = Enum.AutomaticSize.Y
+                        sf.Parent = popup
+
+                        local layout = Instance.new("UIListLayout")
+                        layout.FillDirection = Enum.FillDirection.Vertical
+                        layout.SortOrder = Enum.SortOrder.LayoutOrder
+                        layout.Padding = UDim.new(0, pad)
+                        layout.Parent = sf
+
+                        for i, opt in ipairs(list) do
+                            local b = Instance.new("TextButton")
+                            b.Size = UDim2.new(1, 0, 0, rowH)
+                            b.BackgroundColor3 = theme.Background
+                            b.BorderSizePixel = 0
+                            b.Text = ""
+                            b.AutoButtonColor = false
+                            b.LayoutOrder = i
+                            b.Parent = sf
+                            createRound(b, UDim.new(0, 8))
+                            local bst = createStroke(b, theme.Stroke, 1)
+
+                            local t = Instance.new("TextLabel")
+                            t.BackgroundTransparency = 1
+                            t.Size = UDim2.new(1, -36, 1, 0)
+                            t.Position = UDim2.new(0, 12, 0, 0)
+                            t.Font = Enum.Font.Gotham
+                            t.Text = tostring(opt)
+                            t.TextColor3 = theme.Text
+                            t.TextSize = 13
+                            t.TextXAlignment = Enum.TextXAlignment.Left
+                            t.TextTruncate = Enum.TextTruncate.AtEnd
+                            t.Parent = b
+
+                            local dot = Instance.new("Frame")
+                            dot.Size = UDim2.new(0, 10, 0, 10)
+                            dot.Position = UDim2.new(1, -20, 0.5, -5)
+                            dot.BackgroundColor3 = theme.Accent
+                            dot.BorderSizePixel = 0
+                            dot.BackgroundTransparency = selectedMap[opt] and 0 or 1
+                            dot.Parent = b
+                            createRound(dot, UDim.new(1, 0))
+
+                            b.MouseEnter:Connect(function()
+                                tween(b, { BackgroundColor3 = theme.Primary })
+                                tween(bst, { Color = theme.StrokeHover })
+                            end)
+                            b.MouseLeave:Connect(function()
+                                tween(b, { BackgroundColor3 = theme.Background })
+                                tween(bst, { Color = theme.Stroke })
+                            end)
+
+                            b.MouseButton1Click:Connect(function()
+                                selectedMap[opt] = not selectedMap[opt]
+                                dot.BackgroundTransparency = selectedMap[opt] and 0 or 1
+                                refreshValueText()
+                                if callback then
+                                    local arr = selectedArray()
+                                    task.spawn(function()
+                                        callback(arr)
+                                    end)
+                                end
+                            end)
+                        end
+
+                        return popup
+                    end, openBtn.AbsolutePosition, openBtn.AbsoluteSize, closeState)
                 end
 
                 openBtn.MouseEnter:Connect(function()
@@ -1386,12 +1791,10 @@ function Library:CreateWindow(options)
                     isOpen = not isOpen
                     arrow.Text = isOpen and "^" or "v"
                     if isOpen then
-                        rebuild()
-                        updateOpenHeight()
+                        openPopup()
                     else
-                        tween(listFrame, { Size = UDim2.new(1, -24, 0, 0) })
-                        tween(item, { Size = UDim2.new(1, 0, 0, 44) })
-                        tab._updateCanvas()
+                        window:CloseOverlay()
+                        closeState()
                     end
                 end)
 
@@ -1406,15 +1809,16 @@ function Library:CreateWindow(options)
                         end
                         refreshValueText()
                         if isOpen then
-                            rebuild()
+                            window:CloseOverlay()
+                            openPopup()
                         end
                     end,
                     SetOptions = function(_, arr)
                         list = arr or {}
                         refreshValueText()
                         if isOpen then
-                            rebuild()
-                            updateOpenHeight()
+                            window:CloseOverlay()
+                            openPopup()
                         end
                         tab._updateCanvas()
                     end,
